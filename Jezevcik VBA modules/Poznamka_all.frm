@@ -17,6 +17,7 @@ Attribute VB_Exposed = False
 
 
 
+
 Option Explicit
 
 '  VSTUPY ktore treba nastavit PRED spustenim userform (vyuzit na to treba "public property LET" zadefinovany)

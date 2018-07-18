@@ -17,6 +17,7 @@ Attribute VB_Exposed = False
 
 
 
+
 Option Explicit
 ''''''   LOGIKA MODULU
 'ciel je, aby sa modul dal nacitat zo vsetkych kariet a nemuseli existovat zvlast userforms pre kazde rizeni

@@ -17,6 +17,7 @@ Attribute VB_Exposed = False
 
 
 
+
 Option Explicit
 
 Private Const cst_form_height_short As Double = 296.25  ' 224.25

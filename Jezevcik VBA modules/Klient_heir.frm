@@ -19,6 +19,7 @@ Attribute VB_Exposed = False
 
 
 
+
 Option Explicit
 'Private Const blnInfoKZemrelemu As Boolean = False ' obsah listview vlevo dolu (notar / zemrely)
 

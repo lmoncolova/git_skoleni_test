@@ -55,7 +55,7 @@ Public Sonik_User As Boolean 'Pouziva se pri prihlaseni do Jezevèíka
 Public SonikDM As SonikDataMessage_class 'RISK-1235
 
 
-Sub nacteni_dat_Sonik_Datove_Zpravy_Prehled(Bln_Display_Sample As Boolean)
+Public Sub nacteni_dat_Sonik_Datove_Zpravy_Prehled(Bln_Display_Sample As Boolean)
 
 Dim sql_dz As String
 
