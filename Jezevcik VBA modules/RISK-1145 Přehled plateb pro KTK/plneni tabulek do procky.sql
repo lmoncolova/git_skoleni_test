@@ -1,0 +1,304 @@
+--------   PLNENI TABULEK, ktere pujde do procky
+
+
+SELECT * FROM app_coll_jezevcik_test.OVERDRAFT;
+SELECT * FROM app_coll_jezevcik_test.OVERDRAFT_BALANCE_PD;
+SELECT * FROM app_coll_jezevcik_test.V_OVERDRAFT_PRUBEH a WHERE a.ID_PERSON = 13097;
+
+----  tab. OVERDRAFT
+SELECT * FROM v_client_status WHERE id_person = &id_skp_cuid OR cuid = &id_skp_cuid OR skp_person = &id_skp_cuid; 
+
+MERGE INTO app_coll_jezevcik_test.OVERDRAFT ov
+       USING (SELECT DISTINCT 
+                       p.ID_PERSON , ov.SKP_BANK_ACCOUNT , ov.SKP_BANK_ACCOUNT_DEBIT , ov.SKP_OVERDRAFT , ov.CODE_OVERDRAFT_NUMBER
+                     , ov.AMT_OVERDRAFT_LIMIT , ov.DATE_OVERDRAFT_OPEN , ov.DATE_OVERDRAFT_UTILIZATION
+                     , ov.DATE_OVERDRAFT_UTIL_CURRENT                -- vsichni 1.1.3000, proto na konci jeste sloupecek DATUM_POSLEDNI_ZANORENI
+                     , ov.SKP_OVERDRAFT_STATUS , st.NAME_OVERDRAFT_STATUS , st.NAME_OVERDRAFT_WFSTATUS , ov.AMT_OVERDRAFT , ov.AMT_OVERDRAFT_OVERDUE
+                     , ov.AMT_OVERDRAFT_INTEREST_TO_PAY , ov.AMT_INTEREST_OVERDUE , ov.AMT_INTEREST_PAID , ov.AMT_INTEREST_PAID_TOTAL , ov.AMT_INTEREST_TOTAL
+                     , ov.AMT_INTEREST_LAST , ov.RATE_PENALTY , ov.RATE_PENALTY_INTEREST , ov.AMT_PAYOFF , ov.AMT_PAYOFF_PRINCIPAL
+                     , ov.AMT_PAYOFF_INTEREST, ov.SKP_CURRENCY
+                     , CASE   -- posledni zustatek je NULL pokud klient neni zanoreny
+                         WHEN ov.AMT_OVERDRAFT > 0 
+                           THEN max(ab.AMT_BALANCE)  KEEP (dense_rank FIRST ORDER BY bal.date_period DESC) OVER (PARTITION BY ov.SKP_OVERDRAFT)
+                         ELSE
+                           NULL
+                       END AS POSLEDNI_KLADNY_ZUSTATEK
+                     , CASE   -- datum je NULL pokud klient neni zanoreny
+                         WHEN ov.AMT_OVERDRAFT > 0 
+                           THEN MAX(bal.date_period) OVER (PARTITION BY ov.skp_overdraft ORDER BY bal.date_period DESC)
+                         ELSE
+                           NULL
+                       END AS DATUM_POSLEDNI_ZANORENI
+                       
+                FROM owner_dwh.F_OVERDRAFT_AT ov
+                      JOIN app_coll_jezevcik_test.person p
+                           ON ov.skp_person = p.SKP_PERSON
+                      JOIN owner_dwh.CL_OVERDRAFT_STATUS st
+                           ON ov.SKP_OVERDRAFT_STATUS = st.SKP_OVERDRAFT_STATUS
+                      LEFT JOIN owner_dwh.F_OVERDRAFT_BALANCE_PD bal    -- pro datum posledniho zanoreni
+                           ON bal.SKP_OVERDRAFT = ov.SKP_OVERDRAFT
+                           AND bal.AMT_OVERDRAFT <=0
+                      LEFT JOIN owner_dwh.f_account_balance_pd ab       -- pro posledni kladny zustatek
+                           ON ab.SKP_BANK_ACCOUNT = ov.SKP_BANK_ACCOUNT 
+                           AND ab.DATE_PERIOD = TRUNC(bal.date_period)
+                           AND ab.FLAG_DELETED = 'N'                    -- musi byt tady kvuli partitionu
+                WHERE ov.FLAG_DELETED = 'N'
+                      AND bal.FLAG_DELETED = 'N'
+                      AND st.NAME_OVERDRAFT_STATUS = 'Aktivní'
+                ) new_data
+              
+           ON (ov.skp_overdraft = new_data.skp_overdraft)
+  
+  WHEN MATCHED THEN 
+    UPDATE SET ov.ID_PERSON = new_data.ID_PERSON ,
+               ov.SKP_BANK_ACCOUNT = new_data.SKP_BANK_ACCOUNT ,
+               ov.SKP_BANK_ACCOUNT_DEBIT = new_data.SKP_BANK_ACCOUNT_DEBIT ,
+               -- ov.SKP_OVERDRAFT = new_data.SKP_OVERDRAFT ,
+               ov.CODE_OVERDRAFT_NUMBER = new_data.CODE_OVERDRAFT_NUMBER ,
+               ov.AMT_OVERDRAFT_LIMIT = new_data.AMT_OVERDRAFT_LIMIT ,
+               ov.DATE_OVERDRAFT_OPEN = new_data.DATE_OVERDRAFT_OPEN ,
+               ov.DATE_OVERDRAFT_UTILIZATION = new_data.DATE_OVERDRAFT_UTILIZATION ,
+               ov.DATE_OVERDRAFT_UTIL_CURRENT = new_data.DATE_OVERDRAFT_UTIL_CURRENT,
+               ov.SKP_OVERDRAFT_STATUS = new_data.SKP_OVERDRAFT_STATUS ,
+               ov.NAME_OVERDRAFT_STATUS = new_data.NAME_OVERDRAFT_STATUS ,
+               ov.NAME_OVERDRAFT_WFSTATUS = new_data.NAME_OVERDRAFT_WFSTATUS ,
+               ov.AMT_OVERDRAFT = new_data.AMT_OVERDRAFT ,
+               ov.AMT_OVERDRAFT_OVERDUE = new_data.AMT_OVERDRAFT_OVERDUE ,
+               ov.AMT_OVERDRAFT_INTEREST_TO_PAY = new_data.AMT_OVERDRAFT_INTEREST_TO_PAY ,
+               ov.AMT_INTEREST_OVERDUE = new_data.AMT_INTEREST_OVERDUE ,
+               ov.AMT_INTEREST_PAID = new_data.AMT_INTEREST_PAID ,
+               ov.AMT_INTEREST_PAID_TOTAL = new_data.AMT_INTEREST_PAID_TOTAL ,
+               ov.AMT_INTEREST_TOTAL = new_data.AMT_INTEREST_TOTAL ,
+               ov.AMT_INTEREST_LAST = new_data.AMT_INTEREST_LAST ,
+               ov.RATE_PENALTY = new_data.RATE_PENALTY ,
+               ov.RATE_PENALTY_INTEREST = new_data.RATE_PENALTY_INTEREST ,
+               ov.AMT_PAYOFF = new_data.AMT_PAYOFF ,
+               ov.AMT_PAYOFF_PRINCIPAL = new_data.AMT_PAYOFF_PRINCIPAL ,
+               ov.AMT_PAYOFF_INTEREST = new_data.AMT_PAYOFF_INTEREST ,
+               ov.SKP_CURRENCY = new_data.SKP_CURRENCY,
+               ov.POSLEDNI_KLADNY_ZUSTATEK = new_data.POSLEDNI_KLADNY_ZUSTATEK,
+               ov.DATUM_POSLEDNI_ZANORENI = new_data.DATUM_POSLEDNI_ZANORENI
+  
+  WHEN NOT MATCHED THEN
+     INSERT (ID_PERSON, SKP_BANK_ACCOUNT, SKP_BANK_ACCOUNT_DEBIT, SKP_OVERDRAFT, CODE_OVERDRAFT_NUMBER, AMT_OVERDRAFT_LIMIT, 
+             DATE_OVERDRAFT_OPEN, DATE_OVERDRAFT_UTILIZATION, DATE_OVERDRAFT_UTIL_CURRENT, SKP_OVERDRAFT_STATUS, NAME_OVERDRAFT_STATUS,
+             NAME_OVERDRAFT_WFSTATUS, AMT_OVERDRAFT, AMT_OVERDRAFT_OVERDUE, AMT_OVERDRAFT_INTEREST_TO_PAY, AMT_INTEREST_OVERDUE,
+             AMT_INTEREST_PAID, AMT_INTEREST_PAID_TOTAL, AMT_INTEREST_TOTAL, AMT_INTEREST_LAST, RATE_PENALTY,
+             RATE_PENALTY_INTEREST, AMT_PAYOFF, AMT_PAYOFF_PRINCIPAL, AMT_PAYOFF_INTEREST, SKP_CURRENCY,
+             POSLEDNI_KLADNY_ZUSTATEK, DATUM_POSLEDNI_ZANORENI
+             )
+     VALUES (new_data.ID_PERSON, new_data.SKP_BANK_ACCOUNT, new_data.SKP_BANK_ACCOUNT_DEBIT, new_data.SKP_OVERDRAFT, new_data.CODE_OVERDRAFT_NUMBER, new_data.AMT_OVERDRAFT_LIMIT, 
+             new_data.DATE_OVERDRAFT_OPEN, new_data.DATE_OVERDRAFT_UTILIZATION, new_data.DATE_OVERDRAFT_UTIL_CURRENT, new_data.SKP_OVERDRAFT_STATUS, new_data.NAME_OVERDRAFT_STATUS,
+             new_data.NAME_OVERDRAFT_WFSTATUS, new_data.AMT_OVERDRAFT, new_data.AMT_OVERDRAFT_OVERDUE, new_data.AMT_OVERDRAFT_INTEREST_TO_PAY, new_data.AMT_INTEREST_OVERDUE,
+             new_data.AMT_INTEREST_PAID, new_data.AMT_INTEREST_PAID_TOTAL, new_data.AMT_INTEREST_TOTAL, new_data.AMT_INTEREST_LAST, new_data.RATE_PENALTY,
+             new_data.RATE_PENALTY_INTEREST, new_data.AMT_PAYOFF, new_data.AMT_PAYOFF_PRINCIPAL, new_data.AMT_PAYOFF_INTEREST, new_data.SKP_CURRENCY,
+             new_data.POSLEDNI_KLADNY_ZUSTATEK, new_data.DATUM_POSLEDNI_ZANORENI
+             )
+  ;
+
+
+
+
+
+
+--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/
+--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/
+
+----  tab. OVERDRAFT_BALANCE_PD
+
+
+MERGE INTO app_coll_jezevcik_test.OVERDRAFT_BALANCE_PD bal
+     USING (SELECT ov.ID_PERSON , bal.SKP_OVERDRAFT , bal.DATE_EFFECTIVE , bal.SKP_CONTRACT , bal.SKP_OVERDRAFT_STATUS
+                   , st.NAME_OVERDRAFT_STATUS , st.NAME_OVERDRAFT_WFSTATUS , bal.DATE_PERIOD , bal.AMT_OVERDRAFT , bal.AMT_OVERDRAFT_LIMIT
+                   , bal.AMT_OVERDRAFT_OVERDUE , bal.AMT_PRINCIPAL_OVERDUE , bal.AMT_INTEREST_OVERDUE , bal.AMT_PRINCIPAL_FUTURE , bal.AMT_INTEREST_DUE
+                   , bal.AMT_INTEREST_PAID , bal.AMT_PRINCIPAL_PAID , bal.AMT_INTEREST_PAID_TOTAL , bal.AMT_PRINCIPAL_PAID_TOTAL , bal.AMT_INTEREST
+                   , bal.AMT_INTEREST_TOTAL , bal.AMT_INTEREST_LAST  , bal.AMT_PENALTY_CURRENT  , bal.AMT_PENALTY_INTEREST_CURRENT   , bal.AMT_PRINCIPAL_DRAW  
+                   , bal.RATE_PENALTY   , bal.RATE_PENALTY_INTEREST , bal.date_payoff , bal.AMT_PAYOFF , bal.AMT_PAYOFF_PRINCIPAL , bal.AMT_PAYOFF_INTEREST
+              FROM owner_dwh.F_OVERDRAFT_BALANCE_PD bal
+              JOIN app_coll_jezevcik_test.OVERDRAFT ov ON bal.skp_overdraft = ov.skp_overdraft
+              JOIN owner_dwh.CL_OVERDRAFT_STATUS st
+                ON bal.SKP_OVERDRAFT_STATUS = st.SKP_OVERDRAFT_STATUS
+              WHERE bal.FLAG_DELETED = 'N'
+            ) new_data
+            
+         ON (bal.SKP_OVERDRAFT = new_data.SKP_OVERDRAFT
+             AND bal.DATE_PERIOD = new_data.DATE_PERIOD
+             )
+             
+WHEN MATCHED THEN
+  UPDATE SET bal.ID_PERSON = new_data.ID_PERSON ,
+             -- bal.SKP_OVERDRAFT = new_data.SKP_OVERDRAFT ,
+             bal.DATE_EFFECTIVE = new_data.DATE_EFFECTIVE ,
+             bal.SKP_CONTRACT = new_data.SKP_CONTRACT ,
+             bal.SKP_OVERDRAFT_STATUS = new_data.SKP_OVERDRAFT_STATUS ,
+             bal.NAME_OVERDRAFT_STATUS = new_data.NAME_OVERDRAFT_STATUS ,
+             bal.NAME_OVERDRAFT_WFSTATUS = new_data.NAME_OVERDRAFT_WFSTATUS ,
+             -- bal.DATE_PERIOD = new_data.DATE_PERIOD ,
+             bal.AMT_OVERDRAFT = new_data.AMT_OVERDRAFT ,
+             bal.AMT_OVERDRAFT_LIMIT = new_data.AMT_OVERDRAFT_LIMIT ,
+             bal.AMT_OVERDRAFT_OVERDUE = new_data.AMT_OVERDRAFT_OVERDUE ,
+             bal.AMT_PRINCIPAL_OVERDUE = new_data.AMT_PRINCIPAL_OVERDUE ,
+             bal.AMT_INTEREST_OVERDUE = new_data.AMT_INTEREST_OVERDUE ,
+             bal.AMT_PRINCIPAL_FUTURE = new_data.AMT_PRINCIPAL_FUTURE ,
+             bal.AMT_INTEREST_DUE = new_data.AMT_INTEREST_DUE ,
+             bal.AMT_INTEREST_PAID = new_data.AMT_INTEREST_PAID ,
+             bal.AMT_PRINCIPAL_PAID = new_data.AMT_PRINCIPAL_PAID ,
+             bal.AMT_INTEREST_PAID_TOTAL = new_data.AMT_INTEREST_PAID_TOTAL ,
+             bal.AMT_PRINCIPAL_PAID_TOTAL = new_data.AMT_PRINCIPAL_PAID_TOTAL ,
+             bal.AMT_INTEREST = new_data.AMT_INTEREST ,
+             bal.AMT_INTEREST_TOTAL = new_data.AMT_INTEREST_TOTAL ,
+             bal.AMT_INTEREST_LAST = new_data.AMT_INTEREST_LAST ,
+             bal.AMT_PENALTY_CURRENT = new_data.AMT_PENALTY_CURRENT ,
+             bal.AMT_PENALTY_INTEREST_CURRENT = new_data.AMT_PENALTY_INTEREST_CURRENT ,
+             bal.AMT_PRINCIPAL_DRAW = new_data.AMT_PRINCIPAL_DRAW ,
+             bal.RATE_PENALTY = new_data.RATE_PENALTY ,
+             bal.RATE_PENALTY_INTEREST = new_data.RATE_PENALTY_INTEREST ,
+             bal.DATE_PAYOFF = new_data.DATE_PAYOFF ,
+             bal.AMT_PAYOFF = new_data.AMT_PAYOFF ,
+             bal.AMT_PAYOFF_PRINCIPAL = new_data.AMT_PAYOFF_PRINCIPAL ,
+             bal.AMT_PAYOFF_INTEREST = new_data.AMT_PAYOFF_INTEREST 
+
+WHEN NOT MATCHED THEN
+   INSERT (bal.ID_PERSON, bal.SKP_OVERDRAFT, bal.DATE_EFFECTIVE, bal.SKP_CONTRACT, bal.SKP_OVERDRAFT_STATUS,
+           bal.NAME_OVERDRAFT_STATUS, bal.NAME_OVERDRAFT_WFSTATUS, bal.DATE_PERIOD, bal.AMT_OVERDRAFT, bal.AMT_OVERDRAFT_LIMIT,
+           bal.AMT_OVERDRAFT_OVERDUE, bal.AMT_PRINCIPAL_OVERDUE, bal.AMT_INTEREST_OVERDUE, bal.AMT_PRINCIPAL_FUTURE, bal.AMT_INTEREST_DUE,
+           bal.AMT_INTEREST_PAID, bal.AMT_PRINCIPAL_PAID, bal.AMT_INTEREST_PAID_TOTAL, bal.AMT_PRINCIPAL_PAID_TOTAL, bal.AMT_INTEREST,
+           bal.AMT_INTEREST_TOTAL, bal.AMT_INTEREST_LAST, bal.AMT_PENALTY_CURRENT, bal.AMT_PENALTY_INTEREST_CURRENT, bal.AMT_PRINCIPAL_DRAW,
+           bal.RATE_PENALTY, bal.RATE_PENALTY_INTEREST, bal.DATE_PAYOFF, bal.AMT_PAYOFF, bal.AMT_PAYOFF_PRINCIPAL, bal.AMT_PAYOFF_INTEREST
+           )
+   VALUES (new_data.ID_PERSON, new_data.SKP_OVERDRAFT, new_data.DATE_EFFECTIVE, new_data.SKP_CONTRACT, new_data.SKP_OVERDRAFT_STATUS,
+           new_data.NAME_OVERDRAFT_STATUS, new_data.NAME_OVERDRAFT_WFSTATUS, new_data.DATE_PERIOD, new_data.AMT_OVERDRAFT, new_data.AMT_OVERDRAFT_LIMIT,
+           new_data.AMT_OVERDRAFT_OVERDUE, new_data.AMT_PRINCIPAL_OVERDUE, new_data.AMT_INTEREST_OVERDUE, new_data.AMT_PRINCIPAL_FUTURE, new_data.AMT_INTEREST_DUE,
+           new_data.AMT_INTEREST_PAID, new_data.AMT_PRINCIPAL_PAID, new_data.AMT_INTEREST_PAID_TOTAL, new_data.AMT_PRINCIPAL_PAID_TOTAL, new_data.AMT_INTEREST,
+           new_data.AMT_INTEREST_TOTAL, new_data.AMT_INTEREST_LAST, new_data.AMT_PENALTY_CURRENT, new_data.AMT_PENALTY_INTEREST_CURRENT, new_data.AMT_PRINCIPAL_DRAW,
+           new_data.RATE_PENALTY, new_data.RATE_PENALTY_INTEREST, new_data.DATE_PAYOFF, new_data.AMT_PAYOFF, new_data.AMT_PAYOFF_PRINCIPAL, new_data.AMT_PAYOFF_INTEREST
+           )
+;
+
+
+
+
+
+
+
+
+
+--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/
+--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/
+--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/
+--/--/--/--/            STARA VERZE  (nepotrebna)
+
+
+
+
+
+--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/
+--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/
+
+----  tab. OVERDRAFT_POSLEDNI_ZUSTATEK
+-- zahazuje se
+
+/*
+
+MERGE INTO app_coll_jezevcik_test.OVERDRAFT_POSLEDNI_ZUSTATEK pz
+     USING (SELECT o.SKP_OVERDRAFT, ab.AMT_BALANCE AS posledni_kladny_zustatek
+              FROM app_coll_jezevcik_test.OVERDRAFT o
+              JOIN app_coll_jezevcik_test.V_OVERDRAFT_DATUM_ZANORENI dtm ON dtm.SKP_OVERDRAFT = o.SKP_OVERDRAFT
+              JOIN owner_dwh.f_account_balance_pd ab ON ab.SKP_BANK_ACCOUNT = o.SKP_BANK_ACCOUNT AND ab.DATE_PERIOD = TRUNC(dtm.datum_posledni_zanoreni)
+             WHERE ab.FLAG_DELETED = 'N'
+            ) new_data
+        ON (pz.SKP_OVERDRAFT = new_data.SKP_OVERDRAFT)
+
+WHEN MATCHED THEN
+  UPDATE SET pz.POSLEDNI_KLADNY_ZUSTATEK = new_data.posledni_kladny_zustatek
+
+WHEN NOT MATCHED THEN
+  INSERT (pz.SKP_OVERDRAFT, pz.POSLEDNI_KLADNY_ZUSTATEK)
+  VALUES (new_data.SKP_OVERDRAFT, new_data.POSLEDNI_KLADNY_ZUSTATEK)
+;
+
+
+
+*/
+
+
+
+
+
+
+
+
+
+
+
+
+
+-- (BORDEL, nepotrebne) PLNENI novych tabulek v procke pres INSERT INTO
+
+
+
+
+
+--  iba prepis create table na MERGE INTO (insert into) 
+-- > overdraft
+-- > overdraft balance
+-- > overdraft_posledni_zustatek
+
+
+/*
+hopcip err
+
+
+-- RISK-1145 odtial
+  -- execute immediate 'TRUNCATE TABLE app_coll_jezevcik_test.OVERDRAFT drop storage';
+  INSERT INTO app_coll_jezevcik_test.OVERDRAFT (ID_PERSON, SKP_BANK_ACCOUNT, SKP_BANK_ACCOUNT_DEBIT, SKP_OVERDRAFT, CODE_OVERDRAFT_NUMBER,
+                                                AMT_OVERDRAFT_LIMIT, DATE_OVERDRAFT_OPEN, DATE_OVERDRAFT_UTILIZATION, SKP_OVERDRAFT_STATUS, NAME_OVERDRAFT_STATUS,
+                                                NAME_OVERDRAFT_WFSTATUS, AMT_OVERDRAFT, AMT_OVERDRAFT_OVERDUE, AMT_OVERDRAFT_INTEREST_TO_PAY, AMT_INTEREST_OVERDUE,
+                                                AMT_INTEREST_PAID, AMT_INTEREST_PAID_TOTAL, AMT_INTEREST_TOTAL, AMT_INTEREST_LAST, RATE_PENALTY,
+                                                RATE_PENALTY_INTEREST, AMT_PAYOFF, AMT_PAYOFF_PRINCIPAL, AMT_PAYOFF_INTEREST, SKP_CURRENCY)
+  SELECT p.ID_PERSON , ov.SKP_BANK_ACCOUNT , ov.SKP_BANK_ACCOUNT_DEBIT , ov.SKP_OVERDRAFT , ov.CODE_OVERDRAFT_NUMBER
+       , ov.AMT_OVERDRAFT_LIMIT , ov.DATE_OVERDRAFT_OPEN , ov.DATE_OVERDRAFT_UTILIZATION , ov.SKP_OVERDRAFT_STATUS , st.NAME_OVERDRAFT_STATUS
+       , st.NAME_OVERDRAFT_WFSTATUS , ov.AMT_OVERDRAFT , ov.AMT_OVERDRAFT_OVERDUE , ov.AMT_OVERDRAFT_INTEREST_TO_PAY , ov.AMT_INTEREST_OVERDUE
+       , ov.AMT_INTEREST_PAID , ov.AMT_INTEREST_PAID_TOTAL , ov.AMT_INTEREST_TOTAL , ov.AMT_INTEREST_LAST , ov.RATE_PENALTY
+       , ov.RATE_PENALTY_INTEREST , ov.AMT_PAYOFF , ov.AMT_PAYOFF_PRINCIPAL , ov.AMT_PAYOFF_INTEREST , ov.SKP_CURRENCY
+  FROM owner_dwh.F_OVERDRAFT_AT ov
+  JOIN app_coll_jezevcik_test.person p
+    ON ov.skp_person = p.SKP_PERSON
+  JOIN owner_dwh.CL_OVERDRAFT_STATUS st
+    ON ov.SKP_OVERDRAFT_STATUS = st.SKP_OVERDRAFT_STATUS
+  WHERE ov.FLAG_DELETED = 'N'
+  ;
+
+
+  execute immediate 'TRUNCATE TABLE app_coll_jezevcik_test.OVERDRAFT_BALANCE_PD drop storage';
+  INSERT INTO app_coll_jezevcik_test.OVERDRAFT_BALANCE_PD (ID_PERSON, SKP_OVERDRAFT, DATE_EFFECTIVE, SKP_CONTRACT, SKP_OVERDRAFT_STATUS,
+                                                           NAME_OVERDRAFT_STATUS, NAME_OVERDRAFT_WFSTATUS, DATE_PERIOD, AMT_OVERDRAFT, AMT_OVERDRAFT_LIMIT,
+                                                           AMT_OVERDRAFT_OVERDUE, AMT_PRINCIPAL_OVERDUE, AMT_INTEREST_OVERDUE, AMT_PRINCIPAL_FUTURE, AMT_INTEREST_DUE,
+                                                           AMT_INTEREST_PAID, AMT_PRINCIPAL_PAID, AMT_INTEREST_PAID_TOTAL, AMT_PRINCIPAL_PAID_TOTAL, AMT_INTEREST,
+                                                           AMT_INTEREST_TOTAL, AMT_INTEREST_LAST, AMT_PENALTY_CURRENT, AMT_PENALTY_INTEREST_CURRENT, AMT_PRINCIPAL_DRAW,
+                                                           RATE_PENALTY, RATE_PENALTY_INTEREST, DATE_PAYOFF, AMT_PAYOFF, AMT_PAYOFF_PRINCIPAL, AMT_PAYOFF_INTEREST)
+  SELECT p.ID_PERSON , bal.SKP_OVERDRAFT , bal.DATE_EFFECTIVE , bal.SKP_CONTRACT , bal.SKP_OVERDRAFT_STATUS
+       , st.NAME_OVERDRAFT_STATUS , st.NAME_OVERDRAFT_WFSTATUS , bal.DATE_PERIOD , bal.AMT_OVERDRAFT , bal.AMT_OVERDRAFT_LIMIT
+       , bal.AMT_OVERDRAFT_OVERDUE , bal.AMT_PRINCIPAL_OVERDUE , bal.AMT_INTEREST_OVERDUE , bal.AMT_PRINCIPAL_FUTURE , bal.AMT_INTEREST_DUE
+       , bal.AMT_INTEREST_PAID , bal.AMT_PRINCIPAL_PAID , bal.AMT_INTEREST_PAID_TOTAL , bal.AMT_PRINCIPAL_PAID_TOTAL , bal.AMT_INTEREST
+       , bal.AMT_INTEREST_TOTAL , bal.AMT_INTEREST_LAST  , bal.AMT_PENALTY_CURRENT  , bal.AMT_PENALTY_INTEREST_CURRENT   , bal.AMT_PRINCIPAL_DRAW  
+       , bal.RATE_PENALTY   , bal.RATE_PENALTY_INTEREST , bal.date_payoff , bal.AMT_PAYOFF , bal.AMT_PAYOFF_PRINCIPAL , bal.AMT_PAYOFF_INTEREST
+  FROM owner_dwh.F_OVERDRAFT_BALANCE_PD bal
+  JOIN app_coll_jezevcik_test.person p ON bal.skp_person = p.SKP_PERSON
+  JOIN owner_dwh.CL_OVERDRAFT_STATUS st
+    ON bal.SKP_OVERDRAFT_STATUS = st.SKP_OVERDRAFT_STATUS
+  WHERE bal.FLAG_DELETED = 'N'
+  ;
+  
+  EXECUTE IMMEDIATE 'TRUNCATE TABLE app_coll_jezevcik_test.overdraft_posledni_zustatek drop storage';
+  INSERT INTO app_coll_jezevcik_test.overdraft_posledni_zustatek (SKP_OVERDRAFT, POSLEDNI_KLADNY_ZUSTATEK)
+    SELECT o.SKP_OVERDRAFT, ab.AMT_BALANCE AS posledni_kladny_zustatek
+    FROM app_coll_jezevcik_test.OVERDRAFT o
+    JOIN app_coll_jezevcik_test.V_OVERDRAFT_DATUM_ZANORENI dtm ON dtm.SKP_OVERDRAFT = o.SKP_OVERDRAFT
+    JOIN owner_dwh.f_account_balance_pd ab ON ab.SKP_BANK_ACCOUNT = o.SKP_BANK_ACCOUNT AND ab.DATE_PERIOD = TRUNC(dtm.datum_posledni_zanoreni)
+    WHERE ab.FLAG_DELETED = 'N'
+    ;
+  
+  COMMIT;
+-- RISK-1145 potial
+*/

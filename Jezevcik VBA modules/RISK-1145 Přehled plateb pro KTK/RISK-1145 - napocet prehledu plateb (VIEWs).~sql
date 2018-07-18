@@ -1,0 +1,97 @@
+-- RISK-1145 - napocet prehledu plateb (VIEWs)
+
+
+-- dodrzuj strukturu skriptu (odsadzovanie)
+
+
+/*
+Pseudokod:
+
+-- [DONE] vytvorit VIEW V_OVERDRAFT_DATUM_ZANORENI - datum posledniho zanoreni KTK
+-- [DONE] vytvorit VIEW V_OVERDRAFT_PRUBEH - obsahuje pohyby jistiny spolu s platbami na ucte a kontroluje cisla
+
+-- vymysliet rozumny sposob napoctu urokov a platieb
+  --  nakresli si to
+  --  aspon 3 ideas
+  --  ortogonal, maintainable
+  -->  doplnit vseetky stlpce s urokmi bude treba (teda.. pokial sa neukaze logickejsie mat ich v inom VIEW, ale DWH tabulky to maju spojene)
+
+
+
+
+EXCEL:
+
+> [DONE] vytvorit worksheet - sablona
+> vymysliet plnenie worksheetu
+  > vymysliet plnenie dat do sablony (vkladanie riadkov, formatovanie, medzisucty...)
+  > poradie plnenia veci
+  > okrajove pripady a situlace
+  > datovu strukturu k tomu, aby to slo hezky a aby sa s tym pracovalo rozumne a ortogonalne.
+  > pseudoPP
+
+
+*/
+
+
+SELECT * FROM app_coll_jezevcik_test.V_OVERDRAFT_DATUM_ZANORENI;
+SELECT * FROM app_coll_jezevcik_test.V_OVERDRAFT_PRUBEH;
+
+
+hop
+
+--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/
+--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/
+--/--/--/--/    NAHLEDY
+
+-- nahled:  klienti kteri maji nejvice transakci.  ID_PERSONs: 11371, 11375, 11368, 11340, 11342
+  SELECT max(p.cuid), max(p.name), a.ID_PERSON, COUNT(a.ID_PERSON), max(a.SKP_OVERDRAFT)
+  FROM app_coll_jezevcik_test.OVERDRAFT_BALANCE_PD a 
+  JOIN app_coll_jezevcik_test.person p ON a.ID_PERSON = p.ID_PERSON
+  WHERE a.AMT_PRINCIPAL_DRAW <> 0
+  GROUP BY a.ID_PERSON
+  ORDER BY COUNT(a.ID_PERSON) DESC
+  ;
+
+
+-- nahled: konkretni klient
+  SELECT * 
+  FROM app_coll_jezevcik_test.OVERDRAFT_BALANCE_PD a
+  WHERE a.ID_PERSON = 11371 /*SKP 7101758, CUID 835900*/
+  ORDER BY a.DATE_PERIOD ASC
+  ;
+ 
+  SELECT * 
+  FROM owner_dwh.F_OVERDRAFT_BALANCE_PD a
+  WHERE a.SKP_PERSON = 7101758
+  ORDER BY a.DATE_PERIOD ASC
+  ;
+
+--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/
+--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/
+--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/--/
+--/--/--/--/         kategorizace transakci  -  MAIN VIEW
+
+-- musi se jit pres transakcni tabulky pomoci skp_bank_account, na ktery je KTK navazan.
+      
+    -- random nahlady
+      SELECT * FROM app_coll_jezevcik_test.ucet u WHERE u.ID_PERSON = 11371;
+      SELECT * FROM owner_dwh.F_OVERDRAFT_AT a WHERE a.SKP_OVERDRAFT = 10;
+      SELECT * FROM OVERDRAFT a WHERE a.SKP_OVERDRAFT = 10;
+
+    -- CREATE VIEW: datum posledniho zanoreni do WHERE podminky
+      SELECT * FROM app_coll_jezevcik_test.V_OVERDRAFT_DATUM_ZANORENI;
+      SELECT listagg(username, ',') WITHIN GROUP (ORDER BY username) AS usernames FROM jez_users WHERE dtime_valid_to > SYSDATE; 
+      GRANT SELECT ON app_coll_jezevcik_test.V_OVERDRAFT_DATUM_ZANORENI TO AIR_ANTOL,AIR_DOUBKOVA,AIR_HALCIN,AIR_KASPAROVA,AIR_KLOUDOVAE,AIR_MACICEKM,AIR_RAJSIGLOVA,AIR_SEIDLOVA,AIR_SEVERA,AIR_STAROBOVA,AIR_TOMESKOVA;
+    
+    
+      
+    -- MAIN SELECT  =  platby_KTK  -  vyber prvych troch stlpcov tak, aby som mal pohyby na ucte aj pohyby na KTK a kontroloval zhodu. (zaznamy kde je FLAG = 'N' Jezevcik zasteka / zvyrazni bunku)
+      
+      SELECT * FROM app_coll_jezevcik_test.v_overdraft_prubeh;
+      
+      SELECT listagg(username, ',') WITHIN GROUP (ORDER BY username) AS usernames FROM jez_users WHERE dtime_valid_to > SYSDATE; 
+      GRANT SELECT ON app_coll_jezevcik_test.V_OVERDRAFT_PRUBEH TO AIR_ANTOL,AIR_DOUBKOVA,AIR_HALCIN,AIR_KASPAROVA,AIR_KLOUDOVAE,AIR_MACICEKM,AIR_RAJSIGLOVA,AIR_SEIDLOVA,AIR_SEVERA,AIR_STAROBOVA,AIR_TOMESKOVA;
+      GRANT ALL ON app_coll_jezevcik_test.V_OVERDRAFT_PRUBEH TO air_severa, air_macicekm, air_antol;
+      
+
+
