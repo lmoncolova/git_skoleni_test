@@ -20,6 +20,7 @@ Attribute VB_Exposed = False
 
 
 
+
 Option Explicit
 
 Private Sub CB_generovat_Click()

@@ -17,6 +17,7 @@ Attribute VB_Exposed = False
 
 
 
+
 Option Explicit
 'Static export_chosen_option As Integer 'premenna bude mat hodnoty 1-4, pre export pdf/xml, aktualny/vsetky uvery
 'GroupName je pdf_OR_xml

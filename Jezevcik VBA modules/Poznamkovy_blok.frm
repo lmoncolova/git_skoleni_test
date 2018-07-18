@@ -18,6 +18,7 @@ Attribute VB_Exposed = False
 
 
 
+
 Option Explicit
 
 ' FA vytvorene 17.1.2017 pre zobrazovanie info o klientovi

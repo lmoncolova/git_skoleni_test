@@ -17,6 +17,7 @@ Attribute VB_Exposed = False
 
 
 
+
 Option Explicit
 ' UserForm zavedeny 11/2017, zjednotenie 5 userformov do jedneho univerzalneho pre vsetky rizeni
 ' Userform funguje podobne ako Poznamka_all a Upozorneni_all
