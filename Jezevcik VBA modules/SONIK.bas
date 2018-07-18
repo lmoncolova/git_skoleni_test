@@ -62,7 +62,7 @@ Dim sql_dz As String
 'Tiptext - najedou myší a zobrazí se nápovìda
 
 Sonik_Datove_Zpravy_Prehled.TextBox_DateDelivery.ControlTipText = "Zadej datum ve formátu 17.3.2017."
-Sonik_Datove_Zpravy_Prehled.TextBox_DateBirth.ControlTipText = "Zadej datum ve formátu 17.3.2017."
+Sonik_Datove_Zpravy_Prehled.TextBox_DateBirth.ControlTipText = "Zadej datum ve formátu GIT BLIT.3.2017."
 
 With Sonik_Datove_Zpravy_Prehled.ListView_Datove_Zpravy.ColumnHeaders
 
@@ -190,7 +190,7 @@ Sonik_Datova_Zprava.TextBox_DateBirth.ControlTipText = "Zadej datum ve formátu 1
 With Sonik_Datova_Zprava
 
     .Label_ID_DZ.Caption = SKP_datove_zpravy
-    .Label_Dz_Number.Caption = Cislo_datove_zpravy
+    .Label_DZ_Number.Caption = Cislo_datove_zpravy
     .Label_DZ_Date_Delivery.Caption = Datum_doruceni_datove_zpravy
     .Label_DZ_Sender.Caption = Odesilatel_datove_zpravy
     .Label_DZ_Reference_NUM.Caption = Cislo_Jednaci_datove_zpravy

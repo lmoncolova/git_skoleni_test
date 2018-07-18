@@ -936,11 +936,11 @@ End Sub
 
 Private Sub Label_DZ_Number_Click()
 
-If Label_Dz_Number.Caption <> vbNullString Then
+If Label_DZ_Number.Caption <> vbNullString Then
 
 Dim clipboard As MSForms.DataObject
  Set clipboard = New MSForms.DataObject
- clipboard.SetText Label_Dz_Number.Caption
+ clipboard.SetText Label_DZ_Number.Caption
  clipboard.PutInClipboard
  
  Label_Copy_Values.Caption = "Èíslo datové zprávy zkopírováno do schránky"

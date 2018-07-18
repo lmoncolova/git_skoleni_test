@@ -53,7 +53,7 @@ If ListView_Soucinnosti_Klienta.ListItems.count > 0 Then
     End If
     
     
-Sonik_Update_Vyse_Skody.Label_Dz_Number = ListView_Soucinnosti_Klienta.SelectedItem.SubItems(1)
+Sonik_Update_Vyse_Skody.Label_DZ_Number = ListView_Soucinnosti_Klienta.SelectedItem.SubItems(1)
 Sonik_Update_Vyse_Skody.Label_Name = NAME_KL & " (" & ID_CUID_KL & ")"
 Sonik_Update_Vyse_Skody.TextBox_Amt_Damage.text = ListView_Soucinnosti_Klienta.SelectedItem.SubItems(8)
 Sonik_Update_Vyse_Skody.TextBox_Poznamka_DZ.text = ListView_Soucinnosti_Klienta.SelectedItem.SubItems(9)
