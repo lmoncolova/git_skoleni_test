@@ -3,3 +3,5 @@ abcdef
 Tak poprvé, pojï mi HOP!
 
 Další testovací zmìna pro želvièku
+
+Zmìna s ssh.exe
