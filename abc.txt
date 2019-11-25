@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 abcdef
 
 Tak poprvé, pojï mi HOP!
@@ -5,3 +6,6 @@ Tak poprvé, pojï mi HOP!
 Další testovací zmìna pro elvièku
 
 Zmìna s ssh.exe
+=======
+abcdef12345
+>>>>>>> 273fdb3ea7593ba45d5dd76622f3a4ec1717496a
