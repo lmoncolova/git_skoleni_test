@@ -1769,6 +1769,463 @@ join owner_dwh.dc_person d on d.skp_person = a.skp_person
 WHERE NOT EXISTS (SELECT b.obdobi from MKL_NPOS_VOLANI_MOB_FINAL b WHERE a.obdobi = b.obdobi) -- pojistka, aby se neduplikovaly zaznamy
 ;
 
+----------------------------------------
+--VOLÁNÍ HYPOTÉKY
+----------------------------------------
+
+--podepsané hypotéky daný mìsíc
+insert into MKL_NPOS_VOLANI_HYPO_1_GTT 
+select fl.SKP_LOAN
+       , fl.SKP_APPLICATION
+       , fa.SKP_APPLICATION_PARENT as parent_skp_application
+       , case when fa1.SKP_APPLICATION_PARENT= -1 then fa.skp_application else fa1.SKP_APPLICATION_PARENT end as skp_application_subject
+       , fl.skp_contract
+       , fl.skp_person
+       , fl.SKP_PRODUCT 
+       , p.TEXT_PRODUCT_DESCRIPTION
+       , c.skp_completion_subject
+       , fl.CODE_LOAN_NUMBER
+       , fl.DTIME_INSERTED
+       , fl.DATE_LOAN_OPEN
+       , fl.DATE_LOAN_UTILIZATION
+       , to_char(fl.DATE_LOAN_UTILIZATION, 'YYYY/MM') as mesic_nacerpani
+       , fl.AMT_LOAN_LIMIT
+       , s.NAME_LOAN_STATUS
+       , fa1.TEXT_APPLICATION_NUMBER
+       , g.DTIME_SIGNATURE
+from owner_dwh.f_loan_at fl
+join owner_dwh.dc_product p on p.SKP_PRODUCT = fl.SKP_PRODUCT
+join owner_dwh.cl_loan_status s on s.SKP_LOAN_STATUS=fl.SKP_LOAN_STATUS 
+join owner_dwh.f_application_at fa on fa.SKP_APPLICATION = fl.SKP_APPLICATION
+join owner_dwh.f_application_at fa1 on fa1.SKP_APPLICATION = fa.SKP_APPLICATION
+join owner_dwh.f_completion_subject_at c on c.SKP_APPLICATION = fa.SKP_APPLICATION and c.SKP_COMPLETION_SUBJECT_TYPE = 186
+join owner_dwh.f_completion_signature_tt g on c.SKP_COMPLETION_SUBJECT = g.SKP_COMPLETION_SUBJECT
+where trunc(fl.dtime_inserted) >  TO_CHAR( ADD_MONTHS(LAST_DAY(to_char(p_date,'DD.MM.YYYY')), -11)) --and  date_loan_utilization < '1.1.3000'
+--where trunc(date_loan_utilization) >  TO_CHAR( ADD_MONTHS(LAST_DAY(to_char(trunc(sysdate-3),'DD.MM.YYYY')), -11))and  date_loan_utilization < '1.1.3000'
+and p.CODE_PRODUCT like '%HYREF%'
+;
+
+--datum dokonèení žádosti - ze strany klienta, neuvažujeme hypotéky
+insert into MKL_NPOS_VOLANI_HYPO_2_GTT 
+select s.skp_application 
+       , trunc(min(att.DTIME_VALID_FROM)) as datum_dokonceni_klient  ---z max zmìnìno na min 28.3.2019
+       , att.SKP_EMPLOYEE_LOGGEDIN as skp_employee --DP-546, pøidáno 31.10.2019
+from MKL_NPOS_VOLANI_HYPO_1_GTT s
+join owner_dwh.f_application_tt  att on s.skp_application = att.SKP_APPLICATION
+join owner_ext.ext_pos_employee e on att.SKP_EMPLOYEE_LOGGEDIN= e.skp_employee --DP-546, pøidáno 31.10.2019
+where code_last_page in  ('waitForPreScoringResultTask', 'waitForLoanScoringResultTask', 'waitForScoringResultTask')--DP-546, pøidáno 31.10.2019
+      and att.dtime_valid_from  < = att.dtime_valid_to
+group by s.skp_application, att.SKP_EMPLOYEE_LOGGEDIN
+;
+
+--doplním datum podpisu tam, kde nedohledám datum dokonèení žádosti ze strany klienta
+insert into MKL_NPOS_VOLANI_HYPO_2_GTT 
+with pom as(
+select p.skp_application, p.skp_loan 
+from MKL_NPOS_VOLANI_HYPO_1_GTT p
+where not exists (select * from  MKL_NPOS_VOLANI_HYPO_2_GTT z where z.skp_application = p.skp_application))
+, pom1 as (select o.*
+       , CODE_COMPLETION_SUBJECT_TYPE
+       , skp_signature
+from MKL_NPOS_VOLANI_HYPO_1_GTT o
+join (--kompletace kvùli podpisu
+    select pc.id_source
+           , pc.skp_completion_subject 
+           , pc.id_source_application as id_appl_hypo
+           , pc.skp_completion_subject as skp_signature
+           ,pc.code_completion_subject_type
+    from OWNER_DWH.f_completion_subject_at pc
+    where pc.code_completion_subject_type = 'RHY_LOAN_COMMITMENT' and pc.skp_completion_parent ='-1'
+      union
+      --úvìr + BU
+    select pc.id_source
+           , pc.skp_completion_subject 
+           , pc.id_source_application as id_appl_hypo
+           , pc1.skp_completion_subject as skp_signature
+           ,pc.code_completion_subject_type
+    from OWNER_DWH.f_completion_subject_at pc
+    join OWNER_DWH.f_completion_subject_at  pc1 on (pc1.skp_completion_subject = pc.skp_completion_parent and pc1.skp_completion_parent ='-1')
+    where pc.code_completion_subject_type ='RHY_LOAN_COMMITMENT' and pc.skp_completion_parent <>'-1'
+          union
+      --úvìr + BU + RS
+    select pc.id_source
+           , pc.skp_completion_subject 
+           , pc.id_source_application as id_appl_hypo
+           , pc1.skp_completion_parent as skp_signature
+           , pc.code_completion_subject_type
+    from OWNER_DWH.f_completion_subject_at pc
+    join OWNER_DWH.f_completion_subject_at pc1 on (pc1.skp_completion_subject = pc.SKP_COMPLETION_PARENT and pc1.skp_completion_parent <>'-1')
+    where pc.code_completion_subject_type  ='RHY_LOAN_COMMITMENT' and pc.SKP_COMPLETION_PARENT <>'-1'
+ ) k on k.id_appl_hypo=o.text_application_number
+  )
+select po.skp_application
+       , trunc(ct.DTIME_SIGNATURE) as datum_dokonceni_klient 
+       , ct.SKP_EMPLOYEE
+from pom po
+join pom1 p1 on po.skp_application = p1.skp_application
+join owner_dwh.f_completion_signature_tt ct on ct.SKP_COMPLETION_SUBJECT = p1.SKP_SIGNATURE and trunc(ct.DTIME_SIGNATURE_VALID_TO) = '1.1.3000'
+join owner_ext.ext_pos_employee e on e.skp_employee = ct.SKP_EMPLOYEE
+;
+
+
+--naèerpané pùjèky klienta, propojené na kampaò - hovor
+insert into MKL_NPOS_VOLANI_HYPO_3_GTT
+select distinct t.skp_loan
+       , t.skp_application
+       , t.parent_skp_application
+       , t.skp_application_subject
+       , t.skp_contract
+       , t.skp_person
+       , t.skp_product
+       , t.amt_loan_limit
+       , t.text_product_description
+       , t.text_application_number
+       , t.skp_completion_subject
+       , t.code_loan_number
+       , t.dtime_inserted
+       , t.date_loan_open
+       , t.date_loan_utilization
+       , e.skp_branch 
+       , dz.skp_employee
+       , t.mesic_nacerpani
+       , t.dtime_signature
+       , to_char (t.dtime_signature, 'YYYY/MM') as obdobi
+       , t.name_loan_status
+       , k.campaign_name
+       , trunc(a.DTIME_CONTACT_realized) as datum_kontaktu 
+       , trunc(a.DTIME_CONTACT_realized) as dtime_planned_call_finished 
+       , t.date_loan_utilization as datum_nacerpani_pujcky
+       , dz.datum_dokonceni_klient
+from MKL_NPOS_VOLANI_HYPO_1_GTT  t
+left join MKL_NPOS_VOLANI_HYPO_2_GTT dz on dz.skp_application = t.skp_application
+join owner_ext.ext_pos_employee e on e.skp_employee = dz.skp_employee 
+join owner_dwh.f_contact_at a on a.SKP_PERSON = t.skp_person 
+join owner_dwh.f_contact_finish_tt tt on a.SKP_CONTACT = tt.skp_contact 
+and e.skp_employee  = case when tt.SKP_EMPLOYEE_FINISHED = 28074 then 30522 
+                           when tt.SKP_EMPLOYEE_FINISHED = 29260 then 35408 
+                           when tt.SKP_EMPLOYEE_FINISHED = 3347 then 36732  
+                                else tt.SKP_EMPLOYEE_FINISHED end 
+left join ap_crm.JN_NPOS_KAMP_VOLANI_2018 k on t.skp_person = k.skp_person  
+and k.datum_kontaktu = trunc(a.DTIME_CONTACT_realized)
+where trunc(a.DTIME_CONTACT_realized) = dz.datum_dokonceni_klient 
+and a.skp_contact_channel = 1091 -- hovor
+--and a.skp_employee_created = e.skp_employee
+--and t.skp_loan = 36791291
+--and a.skp_contact_process_type = 1007 --kampaò
+;
+
+
+--kompletace, všechny možnosti s èím mohl jít úvìr
+insert into MKL_NPOS_VOLANI_HYPO_4_GTT
+select o.*
+       , CODE_COMPLETION_SUBJECT_TYPE
+       , skp_signature
+from MKL_NPOS_VOLANI_HYPO_3_GTT o
+join (--kompletace kvùli podpisu
+    select pc.id_source
+           , pc.skp_completion_subject 
+           , pc.id_source_application as id_appl_loan
+           , pc.skp_completion_subject as skp_signature
+           ,pc.code_completion_subject_type
+    from OWNER_DWH.f_completion_subject_at pc
+    where pc.code_completion_subject_type ='RHY_LOAN_COMMITMENT' and pc.skp_completion_parent ='-1'
+      union
+      --úvìr + BU
+    select pc.id_source
+           , pc.skp_completion_subject 
+           , pc.id_source_application as id_appl_loan
+           , pc1.skp_completion_subject as skp_signature
+           ,pc.code_completion_subject_type
+    from OWNER_DWH.f_completion_subject_at pc
+    join OWNER_DWH.f_completion_subject_at  pc1 on (pc1.skp_completion_subject = pc.skp_completion_parent and pc1.skp_completion_parent ='-1')
+    where pc.code_completion_subject_type ='RHY_LOAN_COMMITMENT' and pc.skp_completion_parent <>'-1'
+      union
+      --úvìr + BU + RS
+    select pc.id_source
+           , pc.skp_completion_subject 
+           , pc.id_source_application as id_appl_loan
+           , pc1.skp_completion_parent as skp_signature
+           , pc.code_completion_subject_type
+    from OWNER_DWH.f_completion_subject_at pc
+    join OWNER_DWH.f_completion_subject_at pc1 on (pc1.skp_completion_subject = pc.SKP_COMPLETION_PARENT and pc1.skp_completion_parent <>'-1')
+    where pc.code_completion_subject_type ='RHY_LOAN_COMMITMENT' and pc.SKP_COMPLETION_PARENT <>'-1'
+ ) k on k.id_appl_loan=o.text_application_number
+;  
+
+---k podpisu došlo na poboèce, objem tedy už bude mít v plánech 
+
+insert into MKL_NPOS_VOLANI_HYPO_5_GTT
+select n.skp_loan
+       , n.amt_loan_limit
+       , n.text_product_description
+       , n.date_loan_utilization
+       , n.mesic_nacerpani
+       , n.obdobi
+       , n.CODE_COMPLETION_SUBJECT_TYPE 
+       , ct.skp_completion_subject
+       , ct.SKP_BRANCH_OFFICE
+       , case when ct.SKP_EMPLOYEE = 28074 then 30522 
+              when ct.skp_employee = 29260 then 35408 
+              when ct.skp_employee = 3347 then 36732    
+                else ct.SKP_EMPLOYEE end as SKP_EMPLOYEE
+       , sch.CODE_SIGNATURE_CHANNEL
+       , sch.NAME_SIGNATURE_CHANNEL
+       , n.code_loan_number
+       , n.name_loan_status
+       , trunc(ct.DTIME_SIGNATURE) as dtime_signature
+from MKL_NPOS_VOLANI_HYPO_4_GTT n
+join owner_dwh.f_completion_signature_tt  ct on ct.SKP_COMPLETION_SUBJECT= n.SKP_SIGNATURE
+join owner_dwh.dc_signature_channel sch on sch.SKP_SIGNATURE_CHANNEL=ct.SKP_CHANNEL_SIGNATURE_DELIVERY
+and code_signature_channel = 'PO' and skp_branch_office != '-1'
+--and  n.mesic_nacerpani = to_char(p_date, 'YYYY/MM')
+and ct.DTIME_SIGNATURE_VALID_TO = '1.1.3000'
+;
+
+
+
+--duplicitnì
+insert into MKL_NPOS_VOLANI_HYPO_6_GTT
+--podepsali
+select tk.skp_loan
+       , tk.amt_loan_limit
+       , tk.text_product_description
+       , tk.code_completion_subject_type
+       , tk.skp_branch_office
+       , tk.skp_employee 
+       , tk.mesic_nacerpani
+       , tk.obdobi
+       , tk.dtime_signature
+       , tk.date_loan_utilization
+       , tk.name_loan_status
+      , 'podpis' as typ
+      , b.name_region
+from  MKL_NPOS_VOLANI_HYPO_5_GTT tk
+join owner_ext.ext_pos_branch b on b.skp_branch = tk.skp_branch_office  
+where  tk.code_completion_subject_type = 'RHY_LOAN_COMMITMENT'
+
+union 
+--obvolali
+select v.skp_loan
+       , v.amt_loan_limit
+       , v.text_product_description
+       , v.CODE_COMPLETION_SUBJECT_TYPE
+       , v.skp_branch
+       , v.skp_employee
+       , v.mesic_nacerpani
+       , v.obdobi
+       , v.dtime_signature
+       , v.date_loan_utilization
+       , v.name_loan_status
+       ,'volani' as typ
+       , b.name_region
+from  MKL_NPOS_VOLANI_HYPO_4_GTT v
+join owner_ext.ext_pos_branch b on b.skp_branch = v.skp_branch
+where v.code_completion_subject_type ='RHY_LOAN_COMMITMENT'
+;
+
+
+insert into MKL_NPOS_VOLANI_HYPO_7_GTT
+WITH pom AS (
+--duplicity
+SELECT a.SKP_LOAN
+      ,a.skp_branch_office
+FROM MKL_NPOS_VOLANI_HYPO_6_GTT   a 
+WHERE a.skp_loan IN (
+SELECT a.skp_loan FROM MKL_NPOS_VOLANI_HYPO_6_GTT  a GROUP BY a.skp_loan HAVING COUNT(*)>1)
+GROUP BY a.SKP_LOAN
+      , a.skp_branch_office      
+)
+--první pøijdou s podpisem
+SELECT a.skp_loan
+       , a.amt_loan_limit
+       , a.text_product_description
+       , a.code_completion_subject_type
+       , a.skp_branch_office
+       , a.skp_employee
+       , a.mesic_nacerpani
+       , a.obdobi
+       , a.dtime_signature
+       , a.date_loan_utilization
+       , a.name_loan_status
+       , a.name_region 
+       , 'PODPIS' as vstup
+FROM MKL_NPOS_VOLANI_HYPO_6_GTT  a
+JOIN pom p ON p.SKP_LOAN = a.SKP_LOAN AND p.skp_branch_office = a.skp_branch_office and a.typ = 'podpis' 
+--where mesic_nacerpani = to_char(trunc(sysdate-1), 'YYYY/MM')
+;
+
+insert into MKL_NPOS_VOLANI_HYPO_7_GTT 
+WITH pom AS (
+--duplicity
+SELECT a.SKP_LOAN
+      ,a.skp_branch_office
+FROM MKL_NPOS_VOLANI_HYPO_6_GTT  a 
+WHERE a.skp_loan IN (
+SELECT a.skp_loan FROM MKL_NPOS_VOLANI_HYPO_6_GTT  a GROUP BY a.skp_loan HAVING COUNT(*)>1)
+GROUP BY a.SKP_LOAN
+      , a.skp_branch_office      
+)
+SELECT a.skp_loan
+       , a.amt_loan_limit
+       , a.text_product_description
+       , a.code_completion_subject_type
+       , a.skp_branch_office
+       , a.skp_employee
+       , a.mesic_nacerpani
+       , a.obdobi
+       , a.dtime_signature
+       , a.date_loan_utilization
+       , a.name_loan_status  
+       , a.name_region 
+       ,'DUPLICITA_VOLANI' as vstup
+FROM MKL_NPOS_VOLANI_HYPO_6_GTT  a
+JOIN pom p ON p.SKP_LOAN = a.SKP_LOAN AND p.skp_branch_office != a.skp_branch_office and a.typ != 'podpis' 
+--where mesic_nacerpani = to_char(p_date, 'YYYY/MM')
+;
+
+--18
+insert into MKL_NPOS_VOLANI_HYPO_7_GTT
+WITH pom AS (
+--duplicity
+SELECT a.SKP_LOAN
+      ,a.skp_branch_office
+FROM MKL_NPOS_VOLANI_HYPO_6_GTT  a 
+WHERE a.skp_loan IN (
+SELECT a.skp_loan FROM MKL_NPOS_VOLANI_HYPO_6_GTT a GROUP BY a.skp_loan HAVING COUNT(*)>1)
+GROUP BY a.SKP_LOAN
+      , a.skp_branch_office      
+)
+SELECT a.skp_loan
+       , a.amt_loan_limit
+       , a.text_product_description
+       , a.code_completion_subject_type
+       , a.skp_branch_office
+       , a.skp_employee
+       , a.mesic_nacerpani
+       , a.obdobi
+       , a.dtime_signature
+       , a.date_loan_utilization
+       , a.name_loan_status
+       , a.name_region  
+       , 'VOLANI' as vstup
+FROM MKL_NPOS_VOLANI_HYPO_6_GTT a 
+where not exists (select * from pom p where a.skp_loan = p.skp_loan and p.skp_branch_office = a.skp_branch_office)
+--and mesic_nacerpani = to_char(p_date, 'YYYY/MM') 
+;
+
+---ještì dohledám duplicity s podpisem
+insert into MKL_NPOS_VOLANI_HYPO_7a_GTT
+select skp_loan from MKL_NPOS_VOLANI_HYPO_7_GTT  having count(skp_loan)> 1 group by skp_loan
+;
+--upravím podpis na duplicita podpis, shoduje se s duplicita_volani
+--upravuji název podpis na duplicita_podpis
+UPDATE 
+      (select p.vstup 
+        from MKL_NPOS_VOLANI_HYPO_7_GTT   p
+        where p.skp_loan in (select u.skp_loan from  MKL_NPOS_VOLANI_HYPO_7a_GTT u)
+        and p.vstup = 'PODPIS')
+SET VSTUP = 'DUPLICITA_PODPIS'
+WHERE VSTUP = 'PODPIS';
+
+
+insert into MKL_NPOS_VOLANI_HYPO_8_GTT
+select u.mesic_nacerpani
+       , u.obdobi
+       , u.dtime_signature
+       , b.name_region
+       , b.type_branch_office as typ_pobocky_volala
+       , b.skp_branch as skp_pobocky_volala
+       , b.name_branch as  nazev_pobocky_volala
+       , e.name_employee as zamestnanec_volal
+       , e.skp_employee as skp_zam_volal
+       , p.campaign_name as nazev_kampanì
+       , u.skp_loan
+       , u.date_loan_utilization
+       , u.AMT_LOAN_LIMIT
+       , u.vstup
+       , case when u.vstup in ('PODPIS', 'DUPLICITA_PODPIS', 'DUPLICITA_VOLANI') then 'POS'
+                   else ch.code_signature_channel end as kanal_podpisu --DP-457
+                -- else 'jinde' end as kanal_podpisu
+       , case when u.vstup in ('PODPIS', 'DUPLICITA_PODPIS', 'DUPLICITA_VOLANI') then b1.name_branch
+                   end as pobocka_podpisu
+       , case when u.vstup in ('PODPIS','DUPLICITA_PODPIS','DUPLICITA_VOLANI') then b1.skp_branch
+                   end as skp_pobocky_podpisu
+       , case when u.vstup in ('PODPIS', 'DUPLICITA_PODPIS','DUPLICITA_VOLANI')then e1.name_employee_opposite
+              end as podepsal_asistent
+       , case when u.vstup in  ('PODPIS', 'DUPLICITA_PODPIS','DUPLICITA_VOLANI') then e1.skp_employee
+               end as skp_asist_podepsal
+ 
+from MKL_NPOS_VOLANI_HYPO_7_GTT u        
+left join MKL_NPOS_VOLANI_HYPO_3_GTT p on u.skp_loan = p.skp_loan ---použiji jen pro zijištìní názvu kampanì  a údaje ze které poboèky se volalo
+left join MKL_NPOS_VOLANI_HYPO_5_GTT pp on pp.skp_loan = u.skp_loan --kde se podepsalo
+left join owner_ext.ext_pos_branch b  on b.skp_branch = p.skp_branch
+left join owner_ext.ext_pos_employee e on e.skp_employee = p.skp_employee 
+left join owner_ext.ext_pos_employee e1 on e1.skp_employee = pp.skp_employee
+left join owner_ext.ext_pos_branch b1 on b1.skp_branch = pp.skp_branch_office
+left join owner_dwh.f_loan_at lo on lo.SKP_loan = u.skp_loan
+left join owner_dwh.f_completion_signature_tt sg on lo.SKP_COMPLETION_SUBJECT = sg.SKP_COMPLETION_SUBJECT
+left join owner_dwh.dc_signature_channel ch on ch.SKP_SIGNATURE_CHANNEL = sg.SKP_CHANNEL_SIGNATURE_DELIVERY
+;
+
+
+insert into MKL_NPOS_VOLANI_HYPO_9_GTT
+select 'hypo_prislib' as produkt_volani
+       , v.obdobi
+       , v.mesic_nacerpani 
+       , v.name_region
+       , v.typ_pobocky_volala
+       , v.nazev_pobocky_volala
+       , v.zamestnanec_volal
+       , v.nazev_kampanì
+       , v.skp_loan
+       , v.dtime_signature
+       , v.date_loan_utilization as datum_nacerpani
+       , v.amt_loan_limit as nacerpany_objem
+       , v.vstup
+       , v.kanal_podpisu
+       , v.pobocka_podpisu
+       , v.podepsal_asistent
+       , case when vstup in ('PODPIS', 'DUPLICITA_PODPIS') then pobocka_podpisu
+              when vstup in ('VOLANI', 'DUPLICITA_VOLANI') then v.nazev_pobocky_volala end as pocita_se_do_planu
+from MKL_NPOS_VOLANI_HYPO_8_GTT v
+group by 'hypo_prislib' 
+       , v.obdobi
+       , v.mesic_nacerpani 
+       , v.name_region
+       , v.typ_pobocky_volala
+       , v.nazev_pobocky_volala
+       , v.zamestnanec_volal
+       , v.nazev_kampanì
+       , v.skp_loan
+       , v.dtime_signature
+       , v.date_loan_utilization 
+       , v.amt_loan_limit 
+       , v.vstup
+       , v.kanal_podpisu
+       , v.pobocka_podpisu
+       , v.podepsal_asistent
+       , case when vstup in ('PODPIS', 'DUPLICITA_PODPIS') then pobocka_podpisu
+              when vstup in ('VOLANI', 'DUPLICITA_VOLANI') then v.nazev_pobocky_volala end
+;
+
+delete from MKL_NPOS_VOLANI_HYPO_FINAL  WHERE obdobi =  to_char(p_date, 'YYYY/MM') -- vymazu aktualni datum
+;
+
+--upraveno 19.1.2019 pøidány dva sloupce
+insert into MKL_NPOS_VOLANI_HYPO_FINAL
+select distinct u9.*
+       ,  u3.text_product_description as popis_produktu
+       , round(u3.amt_loan_limit *0.10,0) as objem_do_odmen_hypo
+       , p.id_cuid                   
+       , u3.datum_kontaktu              
+       , u3.datum_dokonceni_klient    
+from  MKL_NPOS_VOLANI_HYPO_9_GTT u9
+join MKL_NPOS_VOLANI_HYPO_3_GTT u3 on u3.skp_loan = u9.skp_loan
+left join MKL_NPOS_VOLANI_HYPO_4_GTT u4 on u4.skp_loan = u9.skp_loan
+join owner_ext.ext_pos_employee e on e.name_employee = u9.zamestnanec_volal and u9.obdobi between e.code_month_race_first and e.code_month_race_last
+left join owner_dwh.dc_person p on p.SKP_PERSON = u3.skp_person 
+WHERE NOT EXISTS (SELECT b.obdobi from MKL_NPOS_VOLANI_HYPO_FINAL b WHERE u9.obdobi = b.obdobi) -- pojistka, aby se neduplikovaly zaznamy
+;
 
 
 
