@@ -1,0 +1,5 @@
+<<<<<<< HEAD
+Petrova oblibena knizka je: Duna
+=======
+oblubena kniha obraz doriana greya
+>>>>>>> remotes/origin/DP_petr
