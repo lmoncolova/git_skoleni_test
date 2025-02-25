@@ -1,3 +1,10 @@
 Ahoj toto je skúška
 pridaj riadok
 druhy riadok
+Nazdar toto je skúška
+Ahoj toto je skúška
+Ahoj toto je skúška
+Ahoj toto je skúška
+Ahoj toto je skúška
+
+
