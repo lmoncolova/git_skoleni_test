@@ -1,3 +1,7 @@
-Ahoj, toto je moje prvé školení gitu
+Nazdar, toto je moje prvé školení gitu
+toto je moja druhá branch
+ahoj
+toto je moja druhá branch
+ahoj
 toto je moja druhá branch
 ahoj
