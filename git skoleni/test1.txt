@@ -1,6 +1,4 @@
-Nazdar, toto je moje prvé školení gitu
-toto je moja druhá branch
-ahoj
+Dobrý deň, toto je moje prvé školení gitu, skúška konfliktu
 toto je moja druhá branch
 ahoj
 toto je moja druhá branch
