@@ -1,4 +1,4 @@
-Dobrý deň, toto je moje prvé školení gitu, skúška konfliktu
+Ahoj, toto je moje prvé školení gitu, skúška konfliktu
 toto je moja druhá branch
 ahoj
 toto je moja druhá branch
