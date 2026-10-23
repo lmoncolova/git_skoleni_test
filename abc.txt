@@ -1,5 +1,6 @@
 abcdef123456789 . zmìn master
 Pridej novy radek na master
+Pridej druhy novy radek
 asdf
 qwe
 
